@@ -77,10 +77,14 @@ async def update_form_submission(
     if not submission:
         return None
     
+    admin = await is_admin(user_id)
     if submission["user_id"] != user_id:
-        # Only admins can update other users' submissions
-        if not await is_admin(user_id):
+        # Only admins can update another collector's record.
+        if not admin:
             return None
+    elif submission["status"] != "draft" and not admin:
+        # Collectors may edit only their own drafts; submitted records are immutable.
+        return None
     
     updates = []
     params = [submission_id]
