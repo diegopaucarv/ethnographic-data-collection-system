@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Ayni Investigación Situada",
+    "slug": "ayni-field-research",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-location", "expo-image-picker", "expo-av"],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Ayni usa tu ubicación para registrar recorridos y observaciones de campo.",
+        "NSCameraUsageDescription": "Ayni usa la cámara para adjuntar evidencia a los registros.",
+        "NSMicrophoneUsageDescription": "Ayni usa el micrófono para grabar entrevistas con consentimiento."
+      }
+    },
+    "android": {
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "CAMERA", "RECORD_AUDIO"]
+    }
+  }
+}
