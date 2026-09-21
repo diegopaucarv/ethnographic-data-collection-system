@@ -19,6 +19,7 @@
     "cn": "^0.3.0",
     "expo": "^57.0.24",
     "expo-av": "^16.0.8",
+    "expo-dev-client": "~57.0.19",
     "expo-image-picker": "^57.0.19",
     "expo-location": "^57.0.19",
     "expo-status-bar": "^57.0.1",

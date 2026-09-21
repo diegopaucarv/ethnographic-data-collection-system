@@ -1,11 +1,16 @@
 {
   "expo": {
-    "name": "Ayni Investigación Situada",
-    "slug": "ayni-field-research",
+    "name": "Ethnographic Tool",
+    "slug": "field-research",
     "version": "1.0.0",
+    "scheme": "ethnographictool",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "plugins": ["expo-location", "expo-image-picker", "expo-av"],
+    "plugins": [
+      "expo-location",
+      "expo-image-picker",
+      "expo-av"
+    ],
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -15,7 +20,19 @@
       }
     },
     "android": {
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "CAMERA", "RECORD_AUDIO"]
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "comchicharitomaravilloso.ethnotool"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "70660d22-4798-4cda-9d69-3142b899c7d8"
+      }
     }
   }
 }
