@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000'
 const PENDING_SUBMISSIONS_KEY = 'ayni.sync.pending.v1'
 const MAX_RETRIES = 5
+const RETRY_BASE_MS = 5_000
+let flushInFlight: Promise<{ synced: number; pending: number }> | null = null
 
 export type PendingSubmission = {
   clientId: string
@@ -107,22 +109,32 @@ export async function enqueueSubmission(formType: string, data: Record<string, u
 }
 
 export async function flushPendingSubmissions(now = Date.now()) {
+  if (flushInFlight) return flushInFlight
+  flushInFlight = flushPendingSubmissionsInternal(now).finally(() => {
+    flushInFlight = null
+  })
+  return flushInFlight
+}
+
+async function flushPendingSubmissionsInternal(now: number) {
   const pending = await readPendingSubmissions()
   const remaining: PendingSubmission[] = []
   let synced = 0
   for (const item of pending) {
-    if (item.nextAttemptAt > now) { remaining.push(item); continue }
-    if (!item.token) { remaining.push(item); continue }
+    if (item.nextAttemptAt > now || !item.token) {
+      remaining.push(item)
+      continue
+    }
     try {
       await createSubmission(item.token, item.formType, item.data)
       synced += 1
-    } catch {
+    } catch (error) {
       const retries = item.retries + 1
-      if (retries < MAX_RETRIES) {
-        remaining.push({ ...item, retries, nextAttemptAt: now + Math.min(15 * 60_000, 2 ** retries * 5_000) })
-      } else {
-        remaining.push({ ...item, retries, nextAttemptAt: now + 60 * 60_000 })
-      }
+      const isUnauthorized = error instanceof ApiRequestError && error.status === 401
+      const delay = isUnauthorized
+        ? 60 * 60_000
+        : Math.min(15 * 60_000, 2 ** Math.min(retries, 8) * RETRY_BASE_MS)
+      remaining.push({ ...item, retries, nextAttemptAt: now + (retries >= MAX_RETRIES ? 60 * 60_000 : delay) })
     }
   }
   await writePendingSubmissions(remaining)
