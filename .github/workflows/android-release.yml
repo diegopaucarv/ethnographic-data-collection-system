@@ -1,0 +1,34 @@
+name: Android release smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "App.tsx"
+      - "api.ts"
+      - "app.json"
+      - "eas.json"
+      - "package.json"
+
+jobs:
+  android-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx expo-doctor
+      - name: Build Android preview
+        run: npx eas build --platform android --profile preview --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Publish device test checklist
+        run: |
+          echo "Physical-device follow-up required: install the generated APK and validate GPS permission denial/retry, recording interruption, image capture, and offline queue replay."
+          echo "Record device model, Android version, APK version, and pass/fail evidence in the release notes."

@@ -15,23 +15,10 @@ async def create_form_submission(
     client_id: Optional[str] = None,
 ) -> dict:
     """Create a submission once per client-generated identity."""
-    if client_id:
-        existing = await fetchrow(
-            """
-            SELECT id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
-            FROM form_submissions
-            WHERE user_id = $1 AND client_id = $2
-            """,
-            user_id,
-            client_id,
-        )
-        if existing:
-            existing["data"] = json.loads(existing["data"])
-            return existing
-
     submission_id = str(uuid.uuid4())
-    
-    # Reserve the next per-type number in one database operation. This remains safe under concurrency.
+
+    # The counter update is atomic. The client-id unique index below makes the
+    # final insert the idempotency authority when two retries race.
     sequence_number = await fetchval(
         """
         INSERT INTO form_code_counters (form_type, next_number)
@@ -43,16 +30,15 @@ async def create_form_submission(
         form_type,
     )
     form_code = f"{form_type}-{int(sequence_number):03d}"
-    
-    query = """
-    INSERT INTO form_submissions 
-    (id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    RETURNING id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
-    """
-    
+
     result = await fetchrow(
-        query,
+        """
+        INSERT INTO form_submissions
+          (id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
+        RETURNING id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
+        """,
         submission_id,
         user_id,
         form_type,
@@ -61,7 +47,20 @@ async def create_form_submission(
         status,
         client_id,
     )
-    
+
+    if result is None:
+        result = await fetchrow(
+            """
+            SELECT id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
+            FROM form_submissions
+            WHERE user_id = $1 AND client_id = $2
+            """,
+            user_id,
+            client_id,
+        )
+
+    if result is None:
+        raise RuntimeError("Submission insert lost its idempotency result")
     result["data"] = json.loads(result["data"])
     return result
 
