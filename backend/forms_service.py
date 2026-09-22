@@ -18,7 +18,7 @@ async def create_form_submission(
     if client_id:
         existing = await fetchrow(
             """
-            SELECT id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
+            SELECT id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
             FROM form_submissions
             WHERE user_id = $1 AND client_id = $2
             """,
@@ -46,7 +46,7 @@ async def create_form_submission(
     INSERT INTO form_submissions 
     (id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at)
     VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    RETURNING id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
+    RETURNING id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
     """
     
     result = await fetchrow(
@@ -68,7 +68,7 @@ async def get_form_submission(submission_id: str) -> Optional[dict]:
     """Get a form submission by ID."""
     result = await fetchrow(
         """
-        SELECT id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
+        SELECT id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
         FROM form_submissions
         WHERE id = $1
         """,
@@ -131,7 +131,7 @@ async def update_form_submission(
     UPDATE form_submissions
     SET {', '.join(updates)}
     WHERE id = $1
-    RETURNING id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
+    RETURNING id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
     """
     
     result = await fetchrow(query, *params)
@@ -144,7 +144,7 @@ async def get_user_submissions(user_id: str, form_type: Optional[str] = None) ->
     """Get all submissions for a user."""
     if form_type:
         query = """
-        SELECT id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
+        SELECT id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
         FROM form_submissions
         WHERE user_id = $1 AND form_type = $2
         ORDER BY created_at DESC
@@ -152,7 +152,7 @@ async def get_user_submissions(user_id: str, form_type: Optional[str] = None) ->
         results = await fetch(query, user_id, form_type)
     else:
         query = """
-        SELECT id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
+        SELECT id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
         FROM form_submissions
         WHERE user_id = $1
         ORDER BY created_at DESC
@@ -172,7 +172,7 @@ async def get_team_submissions(requester_id: str, limit: int = 100, offset: int 
     if admin:
         # Admins see all forms
         query = """
-        SELECT id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
+        SELECT id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
         FROM form_submissions
         WHERE status IN ('submitted', 'synced')
         ORDER BY created_at DESC
@@ -188,7 +188,7 @@ async def get_team_submissions(requester_id: str, limit: int = 100, offset: int 
     else:
         # Non-admins see only other users' submitted forms (not their own)
         query = """
-        SELECT id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
+        SELECT id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
         FROM form_submissions
         WHERE status IN ('submitted', 'synced') AND user_id != $1
         ORDER BY created_at DESC
@@ -245,7 +245,7 @@ async def sync_form(submission_id: str, user_id: str) -> Optional[dict]:
     UPDATE form_submissions
     SET status = 'synced', synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
-    RETURNING id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
+    RETURNING id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at, submitted_at
     """
     
     result = await fetchrow(query, submission_id)

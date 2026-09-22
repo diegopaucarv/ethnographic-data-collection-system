@@ -7,14 +7,18 @@ const MAX_RETRIES = 5
 const RETRY_BASE_MS = 5_000
 let flushInFlight: Promise<{ synced: number; pending: number }> | null = null
 
-export type PendingSubmission = {
+export type SubmissionEnvelope = {
   clientId: string
   formType: string
   data: Record<string, unknown>
+  createdAt: string
+}
+
+export type PendingSubmission = SubmissionEnvelope & {
   token?: string
   retries: number
   nextAttemptAt: number
-  createdAt: string
+  lastError?: string
 }
 
 export type AuthResponse = {
@@ -84,7 +88,18 @@ export function submitSubmission(token: string, id: string) {
 export async function readPendingSubmissions(): Promise<PendingSubmission[]> {
   try {
     const value = await AsyncStorage.getItem(PENDING_SUBMISSIONS_KEY)
-    return value ? (JSON.parse(value) as PendingSubmission[]) : []
+    if (!value) return []
+    const items = JSON.parse(value) as Partial<PendingSubmission>[]
+    return items.filter((item) => item.clientId && item.formType && item.data).map((item) => ({
+      clientId: item.clientId as string,
+      formType: item.formType as string,
+      data: item.data as Record<string, unknown>,
+      createdAt: item.createdAt ?? new Date().toISOString(),
+      token: item.token,
+      retries: item.retries ?? 0,
+      nextAttemptAt: item.nextAttemptAt ?? Date.now(),
+      lastError: item.lastError,
+    }))
   } catch {
     return []
   }
@@ -108,14 +123,17 @@ export async function clearStoredAuthToken() {
 
 export async function enqueueSubmission(formType: string, data: Record<string, unknown>, token?: string) {
   const items = await readPendingSubmissions()
-  const item: PendingSubmission = {
+  const envelope: SubmissionEnvelope = {
     clientId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     formType,
     data,
+    createdAt: new Date().toISOString(),
+  }
+  const item: PendingSubmission = {
+    ...envelope,
     token,
     retries: 0,
     nextAttemptAt: Date.now(),
-    createdAt: new Date().toISOString(),
   }
   await writePendingSubmissions([...items, item])
   return item
@@ -147,7 +165,12 @@ async function flushPendingSubmissionsInternal(now: number) {
       const delay = isUnauthorized
         ? 60 * 60_000
         : Math.min(15 * 60_000, 2 ** Math.min(retries, 8) * RETRY_BASE_MS)
-      remaining.push({ ...item, retries, nextAttemptAt: now + (retries >= MAX_RETRIES ? 60 * 60_000 : delay) })
+      remaining.push({
+        ...item,
+        retries,
+        lastError: error instanceof Error ? error.message : 'Error de sincronización',
+        nextAttemptAt: now + (retries >= MAX_RETRIES ? 60 * 60_000 : delay),
+      })
     }
   }
   await writePendingSubmissions(remaining)

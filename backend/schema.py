@@ -126,6 +126,7 @@ class FormSubmission(BaseModel):
     form_code: str  # ETN-001, OBS-002, etc.
     data: dict[str, Any]
     status: str  # "draft", "submitted", "synced"
+    client_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     submitted_at: Optional[datetime] = None
