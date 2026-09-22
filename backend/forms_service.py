@@ -31,16 +31,18 @@ async def create_form_submission(
 
     submission_id = str(uuid.uuid4())
     
-    # Generate form code (ETN-001, OBS-002, etc.)
-    last_code_num = await fetchval(
+    # Reserve the next per-type number in one database operation. This remains safe under concurrency.
+    sequence_number = await fetchval(
         """
-        SELECT COALESCE(MAX(CAST(SUBSTRING(form_code FROM LENGTH($1) + 2) AS INTEGER)), 0)
-        FROM form_submissions
-        WHERE form_type = $1
+        INSERT INTO form_code_counters (form_type, next_number)
+        VALUES ($1, 2)
+        ON CONFLICT (form_type)
+        DO UPDATE SET next_number = form_code_counters.next_number + 1
+        RETURNING next_number - 1
         """,
-        form_type
+        form_type,
     )
-    form_code = f"{form_type}-{str(last_code_num + 1).zfill(3)}"
+    form_code = f"{form_type}-{int(sequence_number):03d}"
     
     query = """
     INSERT INTO form_submissions 

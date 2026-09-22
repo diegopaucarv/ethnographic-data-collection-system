@@ -8,7 +8,7 @@ const AUTH_TOKEN_KEY = 'ayni.auth.token'
 const AUTH_USER_KEY = 'ayni.auth.user'
 const MAX_RETRIES = 5
 const RETRY_BASE_MS = 5_000
-let flushInFlight: Promise<{ synced: number; pending: number }> | null = null
+let flushInFlight: Promise<{ synced: number; pending: number; errors: string[] }> | null = null
 
 export type LocalSubmissionState = 'draft' | 'queued' | 'syncing' | 'synced' | 'failed'
 
@@ -91,6 +91,18 @@ export function updateSubmission(token: string, id: string, data: Record<string,
 
 export function listSubmissions(token: string) {
   return request<{ submissions: ApiSubmission[] }>('/api/forms', {}, token)
+}
+
+export type SubmissionStatistics = {
+  user_count: number | null
+  total_submissions: number
+  submitted_count: number
+  draft_count: number
+  by_form_type: Array<{ form_type: string; count: number; status: string }>
+}
+
+export function getStatistics(token: string) {
+  return request<SubmissionStatistics>('/api/statistics', {}, token)
 }
 
 export function submitSubmission(token: string, id: string) {
@@ -180,6 +192,7 @@ async function flushPendingSubmissionsInternal(now: number) {
   const pending = await readPendingSubmissions()
   const remaining: PendingSubmission[] = []
   let synced = 0
+  const errors: string[] = []
   for (const item of pending) {
     if (item.nextAttemptAt > now || !item.token) {
       remaining.push(item)
@@ -196,18 +209,21 @@ async function flushPendingSubmissionsInternal(now: number) {
       const delay = isUnauthorized
         ? 60 * 60_000
         : Math.min(15 * 60_000, 2 ** Math.min(retries, 8) * RETRY_BASE_MS)
+      const message = error instanceof Error ? error.message : 'Error de sincronización'
+      errors.push(message)
+      console.error('[ayni] submission sync failed', { clientId: item.clientId, message })
       remaining.push({
         ...syncing,
         state: 'failed',
         retries,
-        lastError: error instanceof Error ? error.message : 'Error de sincronización',
+        lastError: message,
         updatedAt: new Date(now).toISOString(),
         nextAttemptAt: now + (retries >= MAX_RETRIES ? 60 * 60_000 : delay),
       })
     }
   }
   await writePendingSubmissions(remaining)
-  return { synced, pending: remaining.length }
+  return { synced, pending: remaining.length, errors }
 }
 
 export { API_BASE_URL }

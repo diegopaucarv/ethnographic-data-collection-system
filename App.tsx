@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar'
 import { useEffect, useState } from 'react'
+import NetInfo from '@react-native-community/netinfo'
 import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import * as Location from 'expo-location'
 import * as ImagePicker from 'expo-image-picker'
@@ -7,7 +8,7 @@ import { Audio } from 'expo-av'
 import { Ionicons } from '@expo/vector-icons'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { InterviewGuide } from './components/native-interview-guide'
-import { clearStoredAuthToken, enqueueSubmission, flushPendingSubmissions, getStoredAuthSession, getStoredAuthToken, getCurrentUser, login, readPendingSubmissions, storeAuthSession, type AuthSession } from './api'
+import { clearStoredAuthToken, enqueueSubmission, flushPendingSubmissions, getStatistics, getStoredAuthSession, getStoredAuthToken, getCurrentUser, login, readPendingSubmissions, storeAuthSession, type AuthSession, type SubmissionStatistics } from './api'
 
 type ViewKey = 'Inicio' | 'Entrevistados' | 'Grupo RAP' | 'Panel admin'
 type Form = { code: string; title: string; description: string; stage: string }
@@ -80,18 +81,33 @@ function Header({ user, onSignOut }: { user: AuthSession['user']; onSignOut: () 
 function Home({ onOpen }: { onOpen: (form: Form) => void }) { return <><Pressable style={styles.primaryButton} onPress={() => onOpen(forms[0])}><Text style={styles.primaryText}>+ Nueva recolección</Text></Pressable><Text style={styles.sectionTitle}>Instrumentos de recolección</Text><View style={styles.grid}>{forms.map((form) => <View key={form.code} style={styles.card}><View style={styles.cardRow}><Text style={styles.code}>{form.code}</Text><Text style={styles.stage}>{form.stage}</Text></View><Text style={styles.cardTitle}>{form.title}</Text><Text style={styles.cardDesc}>{form.description}</Text><Pressable style={styles.outlineButton} onPress={() => onOpen(form)}><Text style={styles.outlineText}>Abrir instrumento</Text></Pressable></View>)}</View></> }
 function IntervieweeManager({ interviewees, onAdd, onDelete }: { interviewees: Interviewee[]; onAdd: (person: Interviewee) => void; onDelete: (id: string) => void }) { const [name, setName] = useState(''); const [role, setRole] = useState(''); const [organization, setOrganization] = useState(''); return <><Text style={styles.sectionTitle}>Directorio de entrevistados</Text><Text style={styles.subtitle}>Añade perfiles disponibles para la guía ENT.</Text><View style={styles.card}><Input label="Nombre o identificador" value={name} onChangeText={setName} /><Input label="Rol o perfil" value={role} onChangeText={setRole} /><Input label="Organización" value={organization} onChangeText={setOrganization} /><Pressable style={styles.primaryButton} onPress={() => { if (!name.trim() || !role.trim()) return; onAdd({ id: `${Date.now()}`, name, role, organization: organization || 'Sin organización' }); setName(''); setRole(''); setOrganization('') }}><Text style={styles.primaryText}>+ Añadir entrevistado</Text></Pressable></View>{interviewees.map((person) => <View key={person.id} style={styles.listRow}><View><Text style={styles.cardTitle}>{person.name}</Text><Text style={styles.cardDesc}>{person.role} · {person.organization}</Text></View><View style={styles.personActions}><Text style={styles.status}>Disponible</Text><Pressable onPress={() => onDelete(person.id)}><Text style={styles.dangerText}>Eliminar</Text></Pressable></View></View>)}</> }
 function Rap() { const [tasks, setTasks] = useState<{ text: string; type: string }[]>([]); const [reflection, setReflection] = useState(''); const [text, setText] = useState(''); const [type, setType] = useState('Qué observar'); const [loaded, setLoaded] = useState(false); useEffect(() => { AsyncStorage.getItem('ayni.rap.tasks').then((saved) => { if (saved) setTasks(JSON.parse(saved)); setLoaded(true) }).catch(() => setLoaded(true)) }, []); useEffect(() => { if (loaded) AsyncStorage.setItem('ayni.rap.tasks', JSON.stringify(tasks)).catch(() => undefined) }, [tasks, loaded]); return <><Text style={styles.sectionTitle}>Grupo RAP</Text><Text style={styles.cardDesc}>Objetivo central: comprender cómo se organiza la vida cotidiana en Ayna.</Text><View style={styles.card}><Text style={styles.cardTitle}>Checklist para mañana</Text><Input label="¿Qué nos obliga a pensar?" value={reflection} onChangeText={setReflection} multiline /><Input label="Nueva tarea para mañana" value={text} onChangeText={setText} /><View style={styles.segment}>{['Qué observar', 'A quién preguntar', 'Qué documentar'].map((item) => <Pressable key={item} onPress={() => setType(item)} style={[styles.segmentItem, type === item && styles.segmentActive]}><Text style={styles.segmentText}>{item}</Text></Pressable>)}</View><Pressable style={styles.primaryButton} onPress={() => { if (text.trim()) { setTasks([...tasks, { text, type }]); setText('') } }}><Text style={styles.primaryText}>+ Añadir tarea</Text></Pressable></View>{tasks.map((task, index) => <View key={index} style={styles.listRow}><Text style={styles.cardDesc}>{task.type}: {task.text}</Text></View>)}</> }
-function Admin() { return <><Text style={styles.sectionTitle}>Panel de administración</Text><View style={styles.stats}><Stat label="Enviados" value="42" /><Stat label="Pendientes" value="8" /><Stat label="Paradas" value="12" /></View><View style={styles.card}><Text style={styles.cardTitle}>Preparación de campo</Text><Text style={styles.cardDesc}>Modo offline · 3 borradores pendientes</Text><Text style={styles.cardDesc}>Seguridad y consentimiento · Listo</Text><Text style={styles.cardDesc}>Conflictos · 0</Text></View></> }
+function Admin() {
+  const [stats, setStats] = useState<SubmissionStatistics | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => { getStoredAuthToken().then((token) => token ? getStatistics(token).then(setStats).catch((cause) => setError(cause instanceof Error ? cause.message : 'No fue posible cargar las métricas.')) : setError('Sesión no disponible.')) }, [])
+  return <><Text style={styles.sectionTitle}>Panel de administración</Text>{error ? <Text style={styles.error}>{error}</Text> : null}<View style={styles.stats}><Stat label="Enviados" value={stats ? String(stats.submitted_count) : '—'} /><Stat label="Borradores" value={stats ? String(stats.draft_count) : '—'} /><Stat label="Total" value={stats ? String(stats.total_submissions) : '—'} /></View><View style={styles.card}><Text style={styles.cardTitle}>Preparación de campo</Text><Text style={styles.cardDesc}>Las métricas provienen del servidor autenticado.</Text><Text style={styles.cardDesc}>{stats ? `${stats.by_form_type.length} tipos de instrumento registrados` : 'Cargando métricas…'}</Text></View></>
+}
 function Stat({ label, value }: { label: string; value: string }) { return <View style={styles.stat}><Text style={styles.statValue}>{value}</Text><Text style={styles.cardDesc}>{label}</Text></View> }
 function NativeForm({ form, onBack, interviewees, selectedInterviewee, onIntervieweeChange }: { form: Form; onBack: () => void; interviewees: Interviewee[]; selectedInterviewee: string; onIntervieweeChange: (id: string) => void }) {
   const [location, setLocation] = useState('Solicitando ubicación…')
   const [pendingCount, setPendingCount] = useState(0)
   const [syncMessage, setSyncMessage] = useState('Sin borradores pendientes de sincronización')
   useEffect(() => { (async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (!permission.granted) return setLocation('Ubicación no autorizada'); const result = await Location.getCurrentPositionAsync({}); setLocation(`${result.coords.latitude.toFixed(5)}, ${result.coords.longitude.toFixed(5)}`) })() }, [])
-  useEffect(() => { let active = true; const refreshSync = async () => { await flushPendingSubmissions(); const pending = await readPendingSubmissions(); if (active) { setPendingCount(pending.length); setSyncMessage(pending.find((item) => item.lastError)?.lastError ?? (pending.length ? `${pending.length} borrador(es) pendiente(s) de sincronización` : 'Sin borradores pendientes de sincronización')) } }; refreshSync(); return () => { active = false } }, [])
+  useEffect(() => {
+    let active = true
+    const refreshSync = async (online: boolean) => {
+      if (online) { try { await flushPendingSubmissions() } catch (cause) { console.error('[ayni] queue flush failed', cause) } }
+      const pending = await readPendingSubmissions()
+      if (active) { setPendingCount(pending.length); setSyncMessage(pending.find((item) => item.lastError)?.lastError ?? (pending.length ? `${pending.length} borrador(es) pendiente(s) de sincronización` : 'Sin borradores pendientes de sincronización')) }
+    }
+    NetInfo.fetch().then((state) => refreshSync(Boolean(state.isConnected && state.isInternetReachable !== false)))
+    const unsubscribe = NetInfo.addEventListener((state) => { void refreshSync(Boolean(state.isConnected && state.isInternetReachable !== false)) })
+    return () => { active = false; unsubscribe() }
+  }, [])
   const saveDraft = async () => {
     const token = await getStoredAuthToken()
     await enqueueSubmission(form.code, { location, savedAt: new Date().toISOString() }, token ?? undefined)
-    await flushPendingSubmissions()
+    try { await flushPendingSubmissions() } catch (cause) { console.error('[ayni] manual queue flush failed', cause) }
     const pending = await readPendingSubmissions()
     setPendingCount(pending.length)
     const latestFailure = pending.find((item) => item.lastError)?.lastError
