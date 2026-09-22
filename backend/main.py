@@ -182,14 +182,13 @@ async def read_submission(
             detail="Form submission not found"
         )
     
-    # Users can only read their own drafts; anyone can read submitted forms
-    if submission["user_id"] != current_user["user_id"] and submission["status"] == "draft":
-        if current_user["role"] != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot access this form"
-            )
-    
+    # Drafts and submitted records are private unless the team endpoint grants access.
+    if submission["user_id"] != current_user["user_id"] and current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access this form"
+        )
+
     return submission
 
 

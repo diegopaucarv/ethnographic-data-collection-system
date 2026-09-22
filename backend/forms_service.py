@@ -96,13 +96,18 @@ async def update_form_submission(
         param_index += 1
     
     if status is not None:
+        if status not in {"draft", "submitted"}:
+            return None
+        if submission["status"] == "synced":
+            return None
+        if submission["status"] == "submitted" and status == "draft" and not admin:
+            return None
         updates.append(f"status = ${param_index}")
         params.append(status)
         param_index += 1
-        
-        # If submitting, set submitted_at
+
         if status == "submitted":
-            updates.append(f"submitted_at = CURRENT_TIMESTAMP")
+            updates.append("submitted_at = CURRENT_TIMESTAMP")
     
     updates.append("updated_at = CURRENT_TIMESTAMP")
     
@@ -214,10 +219,12 @@ async def sync_form(submission_id: str, user_id: str) -> Optional[dict]:
     if not submission:
         return None
     
-    # Only allow syncing own submissions or as admin
+    # Only submitted records can be synced, and only by their owner or an admin.
     if submission["user_id"] != user_id and not await is_admin(user_id):
         return None
-    
+    if submission["status"] != "submitted":
+        return None
+
     query = """
     UPDATE form_submissions
     SET status = 'synced', synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP

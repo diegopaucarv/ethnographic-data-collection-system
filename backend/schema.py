@@ -1,7 +1,30 @@
 """Pydantic models for Ayni collection system."""
 from datetime import datetime
 from typing import Optional, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+ALLOWED_FORM_TYPES = {"ENT", "OBS", "REC", "MEM"}
+ALLOWED_STATUSES = {"draft", "submitted"}
+
+
+def validate_form_type(value: str) -> str:
+    normalized = value.strip().upper()
+    if normalized not in ALLOWED_FORM_TYPES:
+        raise ValueError("Unsupported form type")
+    return normalized
+
+
+def validate_status(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized not in ALLOWED_STATUSES:
+        raise ValueError("Unsupported status")
+    return normalized
+
+
+def validate_data(value: dict[str, Any]) -> dict[str, Any]:
+    if len(str(value).encode("utf-8")) > 1_000_000:
+        raise ValueError("Submission payload is too large")
+    return value
 
 
 # User/Auth Models
@@ -11,7 +34,20 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(min_length=12, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Name is required")
+        return value
 
 
 class User(UserBase):
@@ -96,16 +132,23 @@ class FormSubmission(BaseModel):
 
 
 class FormSubmissionCreate(BaseModel):
-    """Create a new form submission"""
+    """Create a new form submission."""
     form_type: str
     data: dict[str, Any]
     status: str = "draft"
 
+    _validate_type = field_validator("form_type")(validate_form_type)
+    _validate_data = field_validator("data")(validate_data)
+    _validate_status = field_validator("status")(validate_status)
+
 
 class FormSubmissionUpdate(BaseModel):
-    """Update a form submission"""
+    """Update a form submission."""
     data: Optional[dict[str, Any]] = None
     status: Optional[str] = None
+
+    _validate_data = field_validator("data")(validate_data)
+    _validate_status = field_validator("status")(validate_status)
 
 
 class TeamFormsList(BaseModel):
