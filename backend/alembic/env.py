@@ -6,6 +6,20 @@ from sqlalchemy.engine import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from alembic import context
 import os
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+
+def normalize_asyncpg_url(url: str) -> str:
+    """Translate provider URLs into an asyncpg-compatible SQLAlchemy URL."""
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+
+    parts = urlsplit(url)
+    query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True) if key != "sslmode"]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
 
 # This is the Alembic Config object
 config = context.config
@@ -13,11 +27,7 @@ config = context.config
 # Get DATABASE_URL from environment
 database_url = os.environ.get("DATABASE_URL_UNPOOLED") or os.environ.get("DATABASE_URL")
 if database_url:
-    if database_url.startswith("postgresql://"):
-        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    elif database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
-    config.set_main_option("sqlalchemy.url", database_url)
+    config.set_main_option("sqlalchemy.url", normalize_asyncpg_url(database_url))
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:
