@@ -7,7 +7,7 @@ import { Audio } from 'expo-av'
 import { Ionicons } from '@expo/vector-icons'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { InterviewGuide } from './components/native-interview-guide'
-import { enqueueSubmission, flushPendingSubmissions, readPendingSubmissions } from './api'
+import { enqueueSubmission, flushPendingSubmissions, getStoredAuthToken, readPendingSubmissions } from './api'
 
 type ViewKey = 'Inicio' | 'Entrevistados' | 'Grupo RAP' | 'Panel admin'
 type Form = { code: string; title: string; description: string; stage: string }
@@ -55,7 +55,14 @@ function NativeForm({ form, onBack, interviewees, selectedInterviewee, onIntervi
   const [pendingCount, setPendingCount] = useState(0)
   useEffect(() => { (async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (!permission.granted) return setLocation('Ubicación no autorizada'); const result = await Location.getCurrentPositionAsync({}); setLocation(`${result.coords.latitude.toFixed(5)}, ${result.coords.longitude.toFixed(5)}`) })() }, [])
   useEffect(() => { let active = true; const refreshSync = async () => { await flushPendingSubmissions(); const pending = await readPendingSubmissions(); if (active) setPendingCount(pending.length) }; refreshSync(); return () => { active = false } }, [])
-  const saveDraft = async () => { await enqueueSubmission(form.code, { location, savedAt: new Date().toISOString() }); const pending = await readPendingSubmissions(); setPendingCount(pending.length); Alert.alert('Guardado', pendingCount ? 'Borrador guardado y pendiente de sincronización.' : 'Borrador guardado localmente.') }
+  const saveDraft = async () => {
+    const token = await getStoredAuthToken()
+    await enqueueSubmission(form.code, { location, savedAt: new Date().toISOString() }, token ?? undefined)
+    await flushPendingSubmissions()
+    const pending = await readPendingSubmissions()
+    setPendingCount(pending.length)
+    Alert.alert('Guardado', pending.length ? 'Borrador guardado y pendiente de sincronización.' : 'Borrador guardado y sincronizado.')
+  }
   return <SafeAreaView style={styles.safe}><View style={styles.formHeader}><Pressable onPress={onBack}><Text style={styles.back}>‹ Volver</Text></Pressable><View><Text style={styles.formCode}>{form.code}</Text><Text style={styles.formTitle}>{form.title}</Text></View></View><ScrollView contentContainerStyle={styles.content}>{form.code === 'ENT' && <InterviewGuide interviewees={interviewees} selectedInterviewee={selectedInterviewee} onIntervieweeChange={onIntervieweeChange} />}{form.code === 'MEM' ? <Timeline /> : form.code === 'REC' ? <Route /> : form.code === 'OBS' ? <><Input label="Lugar o unidad observada" /><Input label="Actores presentes" /><Input label="Descripción densa" multiline /><Input label="Reflexividad del investigador" multiline /><MediaCapture /></> : null}<View style={styles.card}><Text style={styles.cardTitle}>Datos automáticos</Text><Text style={styles.cardDesc}>GPS: {location}</Text><Text style={styles.cardDesc}>Fecha y hora: {new Date().toLocaleString()}</Text></View><View style={styles.draftBar}><Ionicons name="cloud-offline-outline" size={18} color="#1e664a" /><Text style={styles.cardDesc}>Borrador guardado localmente; se sincronizará cuando haya conexión.</Text></View><Pressable style={styles.primaryButton} onPress={saveDraft}><Text style={styles.primaryText}>Guardar borrador</Text></Pressable><View style={styles.draftBar}><Ionicons name={pendingCount ? 'cloud-upload-outline' : 'cloud-done-outline'} size={18} color="#1e664a" /><Text style={styles.cardDesc}>{pendingCount ? `${pendingCount} borrador(es) pendiente(s) de sincronización` : 'Sin borradores pendientes de sincronización'}</Text></View></ScrollView></SafeAreaView>
 }
 

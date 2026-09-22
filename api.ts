@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000'
 const PENDING_SUBMISSIONS_KEY = 'ayni.sync.pending.v1'
+const AUTH_TOKEN_KEY = 'ayni.auth.token'
 const MAX_RETRIES = 5
 const RETRY_BASE_MS = 5_000
 let flushInFlight: Promise<{ synced: number; pending: number }> | null = null
@@ -91,6 +92,18 @@ export async function readPendingSubmissions(): Promise<PendingSubmission[]> {
 
 async function writePendingSubmissions(items: PendingSubmission[]) {
   await AsyncStorage.setItem(PENDING_SUBMISSIONS_KEY, JSON.stringify(items))
+}
+
+export async function getStoredAuthToken() {
+  return AsyncStorage.getItem(AUTH_TOKEN_KEY)
+}
+
+export async function storeAuthToken(token: string) {
+  await AsyncStorage.setItem(AUTH_TOKEN_KEY, token)
+}
+
+export async function clearStoredAuthToken() {
+  await AsyncStorage.removeItem(AUTH_TOKEN_KEY)
 }
 
 export async function enqueueSubmission(formType: string, data: Record<string, unknown>, token?: string) {
