@@ -90,9 +90,24 @@ function Admin() {
 function Stat({ label, value }: { label: string; value: string }) { return <View style={styles.stat}><Text style={styles.statValue}>{value}</Text><Text style={styles.cardDesc}>{label}</Text></View> }
 function NativeForm({ form, onBack, interviewees, selectedInterviewee, onIntervieweeChange }: { form: Form; onBack: () => void; interviewees: Interviewee[]; selectedInterviewee: string; onIntervieweeChange: (id: string) => void }) {
   const [location, setLocation] = useState('Solicitando ubicación…')
+  const [locationError, setLocationError] = useState('')
   const [pendingCount, setPendingCount] = useState(0)
   const [syncMessage, setSyncMessage] = useState('Sin borradores pendientes de sincronización')
-  useEffect(() => { (async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (!permission.granted) return setLocation('Ubicación no autorizada'); const result = await Location.getCurrentPositionAsync({}); setLocation(`${result.coords.latitude.toFixed(5)}, ${result.coords.longitude.toFixed(5)}`) })() }, [])
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync()
+        if (!active) return
+        if (!permission.granted) return setLocation('Ubicación no autorizada')
+        const result = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+        if (active) { setLocation(`${result.coords.latitude.toFixed(5)}, ${result.coords.longitude.toFixed(5)}`); setLocationError('') }
+      } catch (cause) {
+        if (active) { setLocation('Ubicación no disponible'); setLocationError(cause instanceof Error ? cause.message : 'No se pudo obtener la ubicación.') }
+      }
+    })()
+    return () => { active = false }
+  }, [])
   useEffect(() => {
     let active = true
     const refreshSync = async (online: boolean) => {
@@ -114,7 +129,7 @@ function NativeForm({ form, onBack, interviewees, selectedInterviewee, onIntervi
     setSyncMessage(latestFailure ? `Pendiente: ${latestFailure}` : pending.length ? `${pending.length} borrador(es) pendiente(s) de sincronización` : 'Sin borradores pendientes de sincronización')
     Alert.alert('Guardado', pending.length ? 'Borrador guardado localmente y pendiente de sincronización.' : 'Borrador guardado y sincronizado.')
   }
-  return <SafeAreaView style={styles.safe}><View style={styles.formHeader}><Pressable onPress={onBack}><Text style={styles.back}>‹ Volver</Text></Pressable><View><Text style={styles.formCode}>{form.code}</Text><Text style={styles.formTitle}>{form.title}</Text></View></View><ScrollView contentContainerStyle={styles.content}>{form.code === 'ENT' && <InterviewGuide interviewees={interviewees} selectedInterviewee={selectedInterviewee} onIntervieweeChange={onIntervieweeChange} />}{form.code === 'MEM' ? <Timeline /> : form.code === 'REC' ? <Route /> : form.code === 'OBS' ? <><Input label="Lugar o unidad observada" /><Input label="Actores presentes" /><Input label="Descripción densa" multiline /><Input label="Reflexividad del investigador" multiline /><MediaCapture /></> : null}<View style={styles.card}><Text style={styles.cardTitle}>Datos automáticos</Text><Text style={styles.cardDesc}>GPS: {location}</Text><Text style={styles.cardDesc}>Fecha y hora: {new Date().toLocaleString()}</Text></View><View style={styles.draftBar}><Ionicons name="cloud-offline-outline" size={18} color="#1e664a" /><Text style={styles.cardDesc}>Borrador guardado localmente; se sincronizará cuando haya conexión.</Text></View><Pressable style={styles.primaryButton} onPress={saveDraft}><Text style={styles.primaryText}>Guardar borrador</Text></Pressable><View style={styles.draftBar}><Ionicons name={pendingCount ? 'cloud-upload-outline' : 'cloud-done-outline'} size={18} color="#1e664a" /><Text style={styles.cardDesc}>{syncMessage}</Text></View></ScrollView></SafeAreaView>
+  return <SafeAreaView style={styles.safe}><View style={styles.formHeader}><Pressable onPress={onBack}><Text style={styles.back}>‹ Volver</Text></Pressable><View><Text style={styles.formCode}>{form.code}</Text><Text style={styles.formTitle}>{form.title}</Text></View></View><ScrollView contentContainerStyle={styles.content}>{form.code === 'ENT' && <InterviewGuide interviewees={interviewees} selectedInterviewee={selectedInterviewee} onIntervieweeChange={onIntervieweeChange} />}{form.code === 'MEM' ? <Timeline /> : form.code === 'REC' ? <Route /> : form.code === 'OBS' ? <><Input label="Lugar o unidad observada" /><Input label="Actores presentes" /><Input label="Descripción densa" multiline /><Input label="Reflexividad del investigador" multiline /><MediaCapture /></> : null}<View style={styles.card}><Text style={styles.cardTitle}>Datos automáticos</Text><Text style={styles.cardDesc}>GPS: {location}</Text>{locationError ? <Text style={styles.error}>{locationError}</Text> : null}<Text style={styles.cardDesc}>Fecha y hora: {new Date().toLocaleString()}</Text></View><View style={styles.draftBar}><Ionicons name="cloud-offline-outline" size={18} color="#1e664a" /><Text style={styles.cardDesc}>Borrador guardado localmente; se sincronizará cuando haya conexión.</Text></View><Pressable style={styles.primaryButton} onPress={saveDraft}><Text style={styles.primaryText}>Guardar borrador</Text></Pressable><View style={styles.draftBar}><Ionicons name={pendingCount ? 'cloud-upload-outline' : 'cloud-done-outline'} size={18} color="#1e664a" /><Text style={styles.cardDesc}>{syncMessage}</Text></View></ScrollView></SafeAreaView>
 }
 
 function Route() {
@@ -127,7 +142,13 @@ function Route() {
     const permission = await Location.getForegroundPermissionsAsync()
     if (!permission.granted) { setPermissionMessage('Autoriza la ubicación para iniciar el recorrido.'); return }
     watchRef.current?.remove()
-    watchRef.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, distanceInterval: 5, timeInterval: 10000 }, ({ coords }) => setPosition(`${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`))
+    try {
+      watchRef.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, distanceInterval: 5, timeInterval: 10000 }, ({ coords }) => setPosition(`${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`))
+      setPermissionMessage('')
+    } catch (cause) {
+      setPosition('GPS no disponible')
+      setPermissionMessage(cause instanceof Error ? cause.message : 'No se pudo iniciar el GPS.')
+    }
   }
   useEffect(() => {
     let active = true
@@ -149,6 +170,7 @@ function MediaCapture() {
   const recordingRef = useRef<Audio.Recording | null>(null)
   const [audioUri, setAudioUri] = useState<string | null>(null)
   const [lifecycleMessage, setLifecycleMessage] = useState('')
+  const [mediaBusy, setMediaBusy] = useState(false)
   useEffect(() => {
     const stopRecording = async () => {
       const current = recordingRef.current
@@ -164,23 +186,43 @@ function MediaCapture() {
     return () => { subscription.remove(); void stopRecording() }
   }, [])
   const captureImage = async () => {
+    if (mediaBusy) return
     if (!consent) return Alert.alert('Consentimiento requerido', 'Confirma el consentimiento antes de capturar evidencia.')
-    const permission = await ImagePicker.requestCameraPermissionsAsync()
-    if (!permission.granted) return Alert.alert('Permiso requerido', 'Activa el acceso a la cámara para continuar.')
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 })
-    if (!result.canceled) setImageUri(result.assets[0].uri)
+    setMediaBusy(true); setLifecycleMessage('')
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync()
+      if (!permission.granted) return Alert.alert('Permiso requerido', 'Activa el acceso a la cámara para continuar.')
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 })
+      if (!result.canceled && result.assets[0]?.uri) setImageUri(result.assets[0].uri)
+    } catch (cause) {
+      setLifecycleMessage(cause instanceof Error ? cause.message : 'No se pudo capturar la fotografía.')
+    } finally { setMediaBusy(false) }
   }
   const toggleRecording = async () => {
+    if (mediaBusy) return
     if (!consent) return Alert.alert('Consentimiento requerido', 'Confirma el consentimiento antes de grabar audio.')
-    if (recording) { const uri = recording.getURI(); await recording.stopAndUnloadAsync(); recordingRef.current = null; setAudioUri(uri); setRecording(null); await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined); return }
-    const permission = await Audio.requestPermissionsAsync()
-    if (!permission.granted) return Alert.alert('Permiso requerido', 'Activa el acceso al micrófono para continuar.')
-    await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true })
-    const result = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY)
-    recordingRef.current = result.recording
-    setRecording(result.recording)
+    setMediaBusy(true); setLifecycleMessage('')
+    try {
+      if (recordingRef.current) {
+        const current = recordingRef.current
+        const uri = current.getURI()
+        await current.stopAndUnloadAsync()
+        recordingRef.current = null; setAudioUri(uri); setRecording(null)
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true })
+        return
+      }
+      const permission = await Audio.requestPermissionsAsync()
+      if (!permission.granted) return Alert.alert('Permiso requerido', 'Activa el acceso al micrófono para continuar.')
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true })
+      const result = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY)
+      recordingRef.current = result.recording; setRecording(result.recording)
+    } catch (cause) {
+      setLifecycleMessage(cause instanceof Error ? cause.message : 'No se pudo gestionar la grabación.')
+      recordingRef.current = null; setRecording(null)
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => undefined)
+    } finally { setMediaBusy(false) }
   }
-  return <View style={styles.card}><Text style={styles.cardTitle}>Multimedia y consentimiento</Text><Text style={styles.cardDesc}>La evidencia solo se captura después de confirmar el consentimiento.</Text>{lifecycleMessage ? <Text style={styles.error}>{lifecycleMessage}</Text> : null}<Pressable style={styles.outlineButton} onPress={captureImage}><Text style={styles.outlineText}>{imageUri ? 'Tomar otra fotografía' : 'Abrir cámara'}</Text></Pressable>{imageUri && <Text style={styles.status}>Fotografía capturada</Text>}<Pressable style={styles.outlineButton} onPress={toggleRecording}><Text style={styles.outlineText}>{recording ? 'Detener grabación' : audioUri ? 'Grabar nuevo audio' : 'Grabar audio'}</Text></Pressable>{audioUri && <Text style={styles.status}>Audio capturado</Text>}<Pressable style={styles.consentRow} onPress={() => setConsent((value) => !value)}><View style={[styles.checkbox, consent && styles.checkboxActive]}>{consent && <Text style={styles.checkmark}>✓</Text>}</View><Text style={styles.cardDesc}>Confirmo que existe consentimiento para esta evidencia.</Text></Pressable></View>
+  return <View style={styles.card}><Text style={styles.cardTitle}>Multimedia y consentimiento</Text><Text style={styles.cardDesc}>La evidencia solo se captura después de confirmar el consentimiento.</Text>{lifecycleMessage ? <Text style={styles.error}>{lifecycleMessage}</Text> : null}<Pressable style={styles.outlineButton} onPress={captureImage} disabled={mediaBusy}><Text style={styles.outlineText}>{mediaBusy ? 'Procesando…' : imageUri ? 'Tomar otra fotografía' : 'Abrir cámara'}</Text></Pressable>{imageUri && <Text style={styles.status}>Fotografía capturada</Text>}<Pressable style={styles.outlineButton} onPress={toggleRecording} disabled={mediaBusy}><Text style={styles.outlineText}>{mediaBusy ? 'Procesando…' : recording ? 'Detener grabación' : audioUri ? 'Grabar nuevo audio' : 'Grabar audio'}</Text></Pressable>{audioUri && <Text style={styles.status}>Audio capturado</Text>}<Pressable style={styles.consentRow} onPress={() => setConsent((value) => !value)}><View style={[styles.checkbox, consent && styles.checkboxActive]}>{consent && <Text style={styles.checkmark}>✓</Text>}</View><Text style={styles.cardDesc}>Confirmo que existe consentimiento para esta evidencia.</Text></Pressable></View>
 }
 
 function Input({ label, value, onChangeText, multiline = false, secureTextEntry = false }: { label: string; value?: string; onChangeText?: (text: string) => void; multiline?: boolean; secureTextEntry?: boolean }) { return <View><Text style={styles.label}>{label}</Text><TextInput value={value} onChangeText={onChangeText} multiline={multiline} secureTextEntry={secureTextEntry} autoCapitalize="none" style={[styles.input, multiline && styles.multiline]} placeholderTextColor="#87919b" /></View> }
