@@ -163,7 +163,8 @@ async def create_submission(
         user_id=current_user["user_id"],
         form_type=submission.form_type,
         data=submission.data,
-        status=submission.status
+        status=submission.status,
+        client_id=submission.client_id,
     )
     return result
 

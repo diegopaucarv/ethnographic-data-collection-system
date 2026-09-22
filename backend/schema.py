@@ -136,6 +136,7 @@ class FormSubmissionCreate(BaseModel):
     form_type: str
     data: dict[str, Any]
     status: str = "draft"
+    client_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
     _validate_type = field_validator("form_type")(validate_form_type)
     _validate_data = field_validator("data")(validate_data)

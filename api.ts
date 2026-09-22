@@ -65,8 +65,8 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   return response.json() as Promise<T>
 }
 
-export function createSubmission(token: string, formType: string, data: Record<string, unknown>) {
-  return request<ApiSubmission>('/api/forms', { method: 'POST', body: JSON.stringify({ form_type: formType, data, status: 'draft' }) }, token)
+export function createSubmission(token: string, formType: string, data: Record<string, unknown>, clientId?: string) {
+  return request<ApiSubmission>('/api/forms', { method: 'POST', body: JSON.stringify({ form_type: formType, data, status: 'draft', client_id: clientId }) }, token)
 }
 
 export function updateSubmission(token: string, id: string, data: Record<string, unknown>) {
@@ -139,7 +139,7 @@ async function flushPendingSubmissionsInternal(now: number) {
       continue
     }
     try {
-      await createSubmission(item.token, item.formType, item.data)
+      await createSubmission(item.token, item.formType, item.data, item.clientId)
       synced += 1
     } catch (error) {
       const retries = item.retries + 1

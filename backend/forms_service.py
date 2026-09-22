@@ -11,9 +11,24 @@ async def create_form_submission(
     user_id: str,
     form_type: str,
     data: dict,
-    status: str = "draft"
+    status: str = "draft",
+    client_id: Optional[str] = None,
 ) -> dict:
-    """Create a new form submission."""
+    """Create a submission once per client-generated identity."""
+    if client_id:
+        existing = await fetchrow(
+            """
+            SELECT id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
+            FROM form_submissions
+            WHERE user_id = $1 AND client_id = $2
+            """,
+            user_id,
+            client_id,
+        )
+        if existing:
+            existing["data"] = json.loads(existing["data"])
+            return existing
+
     submission_id = str(uuid.uuid4())
     
     # Generate form code (ETN-001, OBS-002, etc.)
@@ -29,8 +44,8 @@ async def create_form_submission(
     
     query = """
     INSERT INTO form_submissions 
-    (id, user_id, form_type, form_code, data, status, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (id, user_id, form_type, form_code, data, status, client_id, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     RETURNING id, user_id, form_type, form_code, data, status, created_at, updated_at, submitted_at
     """
     
@@ -41,7 +56,8 @@ async def create_form_submission(
         form_type,
         form_code,
         json.dumps(data),
-        status
+        status,
+        client_id,
     )
     
     result["data"] = json.loads(result["data"])
