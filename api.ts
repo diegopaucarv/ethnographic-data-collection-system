@@ -10,15 +10,20 @@ const MAX_RETRIES = 5
 const RETRY_BASE_MS = 5_000
 let flushInFlight: Promise<{ synced: number; pending: number }> | null = null
 
+export type LocalSubmissionState = 'draft' | 'queued' | 'syncing' | 'synced' | 'failed'
+
 export type SubmissionEnvelope = {
   clientId: string
   formType: string
   data: Record<string, unknown>
   createdAt: string
+  updatedAt: string
 }
 
 export type PendingSubmission = SubmissionEnvelope & {
+  state: Exclude<LocalSubmissionState, 'synced'>
   token?: string
+  serverId?: string
   retries: number
   nextAttemptAt: number
   lastError?: string
@@ -102,7 +107,10 @@ export async function readPendingSubmissions(): Promise<PendingSubmission[]> {
       formType: item.formType as string,
       data: item.data as Record<string, unknown>,
       createdAt: item.createdAt ?? new Date().toISOString(),
+      updatedAt: item.updatedAt ?? item.createdAt ?? new Date().toISOString(),
+      state: item.state === 'failed' ? 'failed' : item.state === 'syncing' ? 'queued' : item.state === 'draft' ? 'draft' : 'queued',
       token: item.token,
+      serverId: item.serverId,
       retries: item.retries ?? 0,
       nextAttemptAt: item.nextAttemptAt ?? Date.now(),
       lastError: item.lastError,
@@ -141,14 +149,17 @@ export async function clearStoredAuthToken() {
 
 export async function enqueueSubmission(formType: string, data: Record<string, unknown>, token?: string) {
   const items = await readPendingSubmissions()
+  const now = new Date().toISOString()
   const envelope: SubmissionEnvelope = {
-    clientId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    clientId: `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
     formType,
     data,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   }
   const item: PendingSubmission = {
     ...envelope,
+    state: 'queued',
     token,
     retries: 0,
     nextAttemptAt: Date.now(),
@@ -174,9 +185,11 @@ async function flushPendingSubmissionsInternal(now: number) {
       remaining.push(item)
       continue
     }
+    const syncing: PendingSubmission = { ...item, state: 'syncing', updatedAt: new Date(now).toISOString() }
     try {
-      await createSubmission(item.token, item.formType, item.data, item.clientId)
+      const serverSubmission = await createSubmission(item.token, item.formType, item.data, item.clientId)
       synced += 1
+      void serverSubmission
     } catch (error) {
       const retries = item.retries + 1
       const isUnauthorized = error instanceof ApiRequestError && error.status === 401
@@ -184,9 +197,11 @@ async function flushPendingSubmissionsInternal(now: number) {
         ? 60 * 60_000
         : Math.min(15 * 60_000, 2 ** Math.min(retries, 8) * RETRY_BASE_MS)
       remaining.push({
-        ...item,
+        ...syncing,
+        state: 'failed',
         retries,
         lastError: error instanceof Error ? error.message : 'Error de sincronización',
+        updatedAt: new Date(now).toISOString(),
         nextAttemptAt: now + (retries >= MAX_RETRIES ? 60 * 60_000 : delay),
       })
     }

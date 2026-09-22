@@ -112,9 +112,14 @@ async def update_form_submission(
         param_index += 1
     
     if status is not None:
-        if status not in {"draft", "submitted"}:
+        allowed_transitions = {
+            "draft": {"draft", "submitted"},
+            "submitted": {"submitted", "synced"},
+            "synced": {"synced"},
+        }
+        if status not in allowed_transitions.get(submission["status"], set()):
             return None
-        if submission["status"] == "synced":
+        if submission["status"] == "submitted" and status == "synced" and not admin:
             return None
         if submission["status"] == "submitted" and status == "draft" and not admin:
             return None

@@ -4,7 +4,7 @@ from typing import Optional, Any
 from pydantic import BaseModel, Field, field_validator
 
 ALLOWED_FORM_TYPES = {"ENT", "OBS", "REC", "MEM"}
-ALLOWED_STATUSES = {"draft", "submitted"}
+ALLOWED_STATUSES = {"draft", "submitted", "synced"}
 
 
 def validate_form_type(value: str) -> str:
