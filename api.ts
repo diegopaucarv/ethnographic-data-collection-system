@@ -1,8 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { Platform } from 'react-native'
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000'
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '')
+const API_BASE_URL = configuredApiUrl || (Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000')
 const PENDING_SUBMISSIONS_KEY = 'ayni.sync.pending.v1'
 const AUTH_TOKEN_KEY = 'ayni.auth.token'
+const AUTH_USER_KEY = 'ayni.auth.user'
 const MAX_RETRIES = 5
 const RETRY_BASE_MS = 5_000
 let flushInFlight: Promise<{ synced: number; pending: number }> | null = null
@@ -27,7 +30,11 @@ export type AuthResponse = {
 }
 
 export async function login(email: string, password: string) {
-  return request<AuthResponse>(`/api/auth/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`, { method: 'POST' })
+  return request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+}
+
+export async function getCurrentUser(token: string) {
+  return request<AuthResponse['user']>('/api/auth/me', {}, token)
 }
 
 export type ApiSubmission = {
@@ -109,16 +116,27 @@ async function writePendingSubmissions(items: PendingSubmission[]) {
   await AsyncStorage.setItem(PENDING_SUBMISSIONS_KEY, JSON.stringify(items))
 }
 
+export type AuthSession = AuthResponse
+
 export async function getStoredAuthToken() {
   return AsyncStorage.getItem(AUTH_TOKEN_KEY)
 }
 
-export async function storeAuthToken(token: string) {
-  await AsyncStorage.setItem(AUTH_TOKEN_KEY, token)
+export async function getStoredAuthSession(): Promise<AuthSession | null> {
+  const [token, user] = await Promise.all([AsyncStorage.getItem(AUTH_TOKEN_KEY), AsyncStorage.getItem(AUTH_USER_KEY)])
+  if (!token || !user) return null
+  try { return { token, user: JSON.parse(user) as AuthResponse['user'] } } catch { return null }
+}
+
+export async function storeAuthSession(session: AuthSession) {
+  await Promise.all([
+    AsyncStorage.setItem(AUTH_TOKEN_KEY, session.token),
+    AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(session.user)),
+  ])
 }
 
 export async function clearStoredAuthToken() {
-  await AsyncStorage.removeItem(AUTH_TOKEN_KEY)
+  await Promise.all([AsyncStorage.removeItem(AUTH_TOKEN_KEY), AsyncStorage.removeItem(AUTH_USER_KEY)])
 }
 
 export async function enqueueSubmission(formType: string, data: Record<string, unknown>, token?: string) {

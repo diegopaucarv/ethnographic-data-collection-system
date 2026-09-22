@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from database import get_pool, close_pool
 from auth import decode_token, create_access_token, authenticate_user, create_user, get_user
 from schema import (
-    UserCreate, FormSubmissionCreate, FormSubmissionUpdate, 
+    UserCreate, UserLogin, FormSubmissionCreate, FormSubmissionUpdate, 
     EtnographicScene, ObservationDay, SceneRecord, AnalyticMemo
 )
 from forms_service import (
@@ -126,9 +126,9 @@ async def register(user: UserCreate):
 
 
 @app.post("/api/auth/login")
-async def login(email: str, password: str):
+async def login(credentials: UserLogin):
     """Login user and return access token."""
-    user = await authenticate_user(email, password)
+    user = await authenticate_user(credentials.email, credentials.password)
     
     if not user:
         raise HTTPException(
@@ -147,6 +147,15 @@ async def login(email: str, password: str):
         },
         "token": token
     }
+
+
+@app.get("/api/auth/me")
+async def current_user(current_user: dict = Depends(get_current_user)):
+    """Return the authenticated user's current profile."""
+    user = await get_user(current_user["user_id"])
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return {"id": user["id"], "email": user["email"], "name": user["name"], "role": user["role"]}
 
 
 # ============================================================================
