@@ -1,4 +1,18 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000'
+const PENDING_SUBMISSIONS_KEY = 'ayni.sync.pending.v1'
+const MAX_RETRIES = 5
+
+export type PendingSubmission = {
+  clientId: string
+  formType: string
+  data: Record<string, unknown>
+  token?: string
+  retries: number
+  nextAttemptAt: number
+  createdAt: string
+}
 
 export type ApiSubmission = {
   id: string
@@ -53,6 +67,57 @@ export function listSubmissions(token: string) {
 
 export function submitSubmission(token: string, id: string) {
   return request<ApiSubmission>(`/api/forms/${encodeURIComponent(id)}/submit`, { method: 'POST' }, token)
+}
+
+export async function readPendingSubmissions(): Promise<PendingSubmission[]> {
+  try {
+    const value = await AsyncStorage.getItem(PENDING_SUBMISSIONS_KEY)
+    return value ? (JSON.parse(value) as PendingSubmission[]) : []
+  } catch {
+    return []
+  }
+}
+
+async function writePendingSubmissions(items: PendingSubmission[]) {
+  await AsyncStorage.setItem(PENDING_SUBMISSIONS_KEY, JSON.stringify(items))
+}
+
+export async function enqueueSubmission(formType: string, data: Record<string, unknown>, token?: string) {
+  const items = await readPendingSubmissions()
+  const item: PendingSubmission = {
+    clientId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    formType,
+    data,
+    token,
+    retries: 0,
+    nextAttemptAt: Date.now(),
+    createdAt: new Date().toISOString(),
+  }
+  await writePendingSubmissions([...items, item])
+  return item
+}
+
+export async function flushPendingSubmissions(now = Date.now()) {
+  const pending = await readPendingSubmissions()
+  const remaining: PendingSubmission[] = []
+  let synced = 0
+  for (const item of pending) {
+    if (item.nextAttemptAt > now) { remaining.push(item); continue }
+    if (!item.token) { remaining.push(item); continue }
+    try {
+      await createSubmission(item.token, item.formType, item.data)
+      synced += 1
+    } catch {
+      const retries = item.retries + 1
+      if (retries < MAX_RETRIES) {
+        remaining.push({ ...item, retries, nextAttemptAt: now + Math.min(15 * 60_000, 2 ** retries * 5_000) })
+      } else {
+        remaining.push({ ...item, retries, nextAttemptAt: now + 60 * 60_000 })
+      }
+    }
+  }
+  await writePendingSubmissions(remaining)
+  return { synced, pending: remaining.length }
 }
 
 export { API_BASE_URL }
