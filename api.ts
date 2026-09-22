@@ -14,6 +14,15 @@ export type PendingSubmission = {
   createdAt: string
 }
 
+export type AuthResponse = {
+  user: { id: string; email: string; name: string; role: string }
+  token: string
+}
+
+export async function login(email: string, password: string) {
+  return request<AuthResponse>(`/api/auth/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`, { method: 'POST' })
+}
+
 export type ApiSubmission = {
   id: string
   user_id: string
