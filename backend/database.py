@@ -1,4 +1,5 @@
 """Database connection and pooling for Ayni collection system."""
+import asyncio
 import os
 import asyncpg
 from typing import Optional
@@ -7,16 +8,27 @@ pool: Optional[asyncpg.Pool] = None
 
 
 async def get_pool() -> asyncpg.Pool:
-    """Get or create the asyncpg connection pool."""
+    """Get or create a pool bound to the active event loop."""
     global pool
+    active_loop = asyncio.get_running_loop()
+    pool_loop = getattr(pool, "_loop", None) if pool is not None else None
+    pool_is_closed = bool(getattr(pool, "_closed", False)) if pool is not None else False
+
+    if pool is not None and (pool_is_closed or pool_loop is not active_loop):
+        # asyncpg pools are event-loop bound; do not await close() on a pool
+        # owned by a loop that pytest or a worker has already stopped.
+        if pool_loop is active_loop and not pool_is_closed:
+            await pool.close()
+        pool = None
+
     if pool is None:
         database_url = os.environ.get("DATABASE_URL")
         if not database_url:
             raise ValueError("DATABASE_URL environment variable not set")
         pool = await asyncpg.create_pool(
             dsn=database_url,
-            min_size=5,
-            max_size=20,
+            min_size=int(os.environ.get("DB_POOL_MIN_SIZE", "1")),
+            max_size=int(os.environ.get("DB_POOL_MAX_SIZE", "5")),
             command_timeout=60,
         )
     return pool

@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.Column('role', sa.VARCHAR(50), nullable=False, server_default='collector'),
         sa.Column('created_at', sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
         sa.Column('updated_at', sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
-        sa.Column('is_active', sa.BOOLEAN, server_default=True),
+        sa.Column('is_active', sa.BOOLEAN, server_default=sa.true()),
     )
     op.create_index('ix_users_email', 'users', ['email'])
     

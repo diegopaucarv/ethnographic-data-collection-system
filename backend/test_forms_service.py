@@ -25,7 +25,8 @@ TEST_ADMIN_PASSWORD = "AdminPassword123!"
 
 @pytest_asyncio.fixture
 async def test_user():
-    """Create a test collector user."""
+    """Create an isolated test collector user."""
+    await execute("DELETE FROM users WHERE email = $1", TEST_USER_EMAIL)
     user = await create_user(
         email=TEST_USER_EMAIL,
         name="Test Collector",
