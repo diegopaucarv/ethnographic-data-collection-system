@@ -1,5 +1,6 @@
 """Integration and concurrency tests for form submission service."""
 import pytest
+import pytest_asyncio
 import asyncio
 import json
 from uuid import uuid4
@@ -22,7 +23,7 @@ TEST_ADMIN_EMAIL = "test.admin@example.com"
 TEST_ADMIN_PASSWORD = "AdminPassword123!"
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_user():
     """Create a test collector user."""
     user = await create_user(
@@ -36,7 +37,7 @@ async def test_user():
     await execute("DELETE FROM users WHERE id = $1", user["id"])
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_admin():
     """Create a test admin user."""
     admin = await create_user(
@@ -50,7 +51,7 @@ async def test_admin():
     await execute("DELETE FROM users WHERE id = $1", admin["id"])
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def cleanup_submissions():
     """Cleanup submissions after each test."""
     yield
